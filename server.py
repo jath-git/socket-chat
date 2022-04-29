@@ -3,7 +3,14 @@ import threading
 from shared import *
 from datetime import datetime
 from getpass import getpass
-import time as timer
+import atexit
+
+
+def exit_handler():
+    print('My application is ending!')
+
+
+atexit.register(exit_handler)
 
 connections = []
 connections_id_map = {}
@@ -12,6 +19,12 @@ id_name_map = {}
 name_id_map = {}
 menu_thread = threading.Event()
 menu_thread.clear()
+disconnected_server = False
+
+
+def get_long_time():
+    short_time = get_short_time()
+    return f'{"" if short_time[0] == "0" else "1"}{short_time[1]}:{short_time[2:4]} {short_time[4]}M'
 
 
 def get_short_time():
@@ -59,21 +72,20 @@ def remove_connection(c):
         c.close()
 
 
-def client_observe(client, address):
+def client_observe(client, address, already_joined):
     id = display_address(address)
-    connected = True
     old_name = id_name_map[id] if id in id_name_map else id
     name = old_name
 
-    print(f'[USER] {name} joined')
-    time = get_short_time()
-    for c in connections:
-        try:
-            send_compound(c, name, 'joined', time, False)
-        except:
-            remove_connection(c)
+    if not already_joined:
+        print(f'[USER][{get_long_time()}] {name} joined')
+        for c in connections:
+            try:
+                send_compound(c, name, 'joined', get_short_time(), False)
+            except:
+                remove_connection(c)
 
-    while connected:
+    while True:
         if menu_thread.is_set():
             return
 
@@ -84,25 +96,27 @@ def client_observe(client, address):
             return
 
         if message:
+            long_time = get_long_time()
             if message.type == MESSAGE:
                 if message.text == '':
-                    print(f'[ERROR] {name} attempted to send empty message')
+                    print(
+                        f'[ERROR][{long_time}] {name} sent empty message')
                     send_message(client, RESPONSE,
                                  '[ERROR] Message must not be empty')
                 else:
-                    print(f'[RECEIVED] {name}: {message.text}')
+                    print(f'[RECEIVED][{long_time}] {name}: {message.text}')
                     broadcast(name, message.text, True)
             elif message.type == NAME:
                 if message.text == '':
                     print(
-                        f'[ERROR] {name} attempted to rename to empty string')
+                        f'[ERROR][{long_time}] {name} renamed empty string')
                     send_message(client, RESPONSE,
-                                 '[ERROR] New name must not be empty')
+                                 f'[ERROR][{long_time}] New name must not be empty')
                 elif message.text in name_id_map:
                     print(
-                        f'[ERROR] {name} attempted to rename to already existing name')
+                        f'[ERROR][{long_time}] {name} renamed to existing name')
                     send_message(client, RESPONSE,
-                                 '[ERROR] Name already exists')
+                                 f'[ERROR][{long_time}] Name already exists')
                 else:
                     old_name = name
                     name = message.text
@@ -114,18 +128,21 @@ def client_observe(client, address):
                         id_name_map[id] = name
                         name_id_map[name] = id
 
-                print(f'[USER] {old_name} renamed as {name}')
-                broadcast(old_name, f'renamed as {name}', False)
+                    print(f'[USER][{long_time}] {old_name} renamed as {name}')
+                    broadcast(old_name, f'renamed as {name}', False)
+            elif message.type == MENU:
+                print(f'[USER][{long_time}] {name} accessed menu')
+                send_menu(client)
             elif message.type == VOID:
                 send_void(client)
+            elif message.type == PAUSED:
+                return
             elif message.type == DISCONNECT_REQUEST:
                 broadcast(name, 'disconnected', False)
-                send_disconnect_confirm(client)
+                send_disconnect_request(client)
             elif message.type == DISCONNECT_CONFIRM:
-                connected = False
-
-    remove_connection(client)
-    client.close()
+                remove_connection(client)
+                client.close()
 
 
 def create_socket():
@@ -133,7 +150,8 @@ def create_socket():
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         return server
     except socket.error as err:
-        print(f'[ERROR] Socket creation failed: {str(err)}')
+        print(
+            f'[ERROR][{get_long_time()}] Socket creation failed: {str(err)}')
         exit()
 
 
@@ -142,7 +160,7 @@ count_connection_creation = 0
 
 
 def create_client_connection():
-    global count_connection_creation
+    global count_connection_creation, disconnected_server
     connection, address = server.accept()
     server.setblocking(True)
     connections.append(connection)
@@ -156,16 +174,45 @@ def create_client_connection():
         except:
             remove_connection(c)
 
+    long_time = get_long_time()
     if count_connection_creation == 1:
-        print('[UPDATE] 1 Connection has been created')
+        print(f'[UPDATE][{long_time}] 1 Connection has been created')
     else:
         print(
-            f'[UPDATE] {count_connection_creation} Connections have been created')
+            f'[UPDATE][{long_time}] {count_connection_creation} Connections have been created')
 
     receive_thread = threading.Thread(
-        target=client_observe, args=(connection, address))
+        target=client_observe, args=(connection, address, False))
     receive_thread.start()
-    create_client_connection()
+
+    if disconnected_server:
+        create_client_connection()
+
+
+def server_menu():
+    header('menu')
+    print("[OPTION] 1 - Kick a player")
+    print("[OPTION] 2 - Disconnect server")
+    print("[OPTION] 3 - Exit menu\n")
+    option = input('> ')
+
+    if option == '1':
+        pass
+    elif option == '2':
+        for c in connections:
+            global disconnected_server
+            send_disconnect_server(c)
+            remove_connection(c)
+            c.close()
+            disconnected_server = True
+        return False
+    elif option == '3' or option == '*':
+        pass
+    else:
+        print('[ERROR] Invalid Input. Choose from 1 to 3\n')
+        server_menu()
+
+    return True
 
 
 def read_input():
@@ -173,21 +220,27 @@ def read_input():
 
     if len(user_input) > 0 and (user_input == '*' or user_input[len(user_input) - 1] == '*'):
         menu_thread.set()
-        print()
-        header('menu')
-        user_input = input()
+        for c in connections:
+            try:
+                send_paused(c)
+            except:
+                remove_connection(c)
 
-    menu_thread.clear()
+        boot_server = server_menu()
 
-    for c in connections:
-        try:
-            receive_thread = threading.Thread(
-                target=client_observe, args=(c, connections_address_map[c]))
-            receive_thread.start()
-        except:
-            remove_connection(c)
+        if not boot_server:
+            return
 
-    read_input()
+        menu_thread.clear()
+        for c in connections:
+            try:
+                receive_thread = threading.Thread(
+                    target=client_observe, args=(c, connections_address_map[c], True))
+                receive_thread.start()
+
+                send_message(c, RESPONSE, '[CONTINUE] Server is unpaused')
+            except:
+                remove_connection(c)
 
 
 def boot_server():
@@ -200,13 +253,13 @@ def boot_server():
         header('instructions')
         print(f'[SUCCESS] Server is Running on {id}')
         print('[CONTROL] Enter "*" anytime to access menu\n')
-        header('chat server')
+        header(' chat server ')
 
         menu_thread = threading.Thread(target=read_input)
         menu_thread.start()
         create_client_connection()
     except socket.error as err:
-        print(f'[ERROR] Socket binding failed: {str(err)}')
+        print(f'[ERROR][{get_long_time()}] Socket binding failed: {str(err)}')
 
 
 boot_server()

@@ -1,17 +1,19 @@
 import socket
 import os
 
-PORT = 6063
-DISCONNECT_REQUEST = 0
-MESSAGE = 1
+PORT = 6062
+DISCONNECT_REQUEST = 10
+MESSAGE = 0
 NAME = 2
 RESPONSE = 3
 COMPOUND = 4  # transfer NAME and MESSAGE/RESPONSE
-VOID = 6
+VOID = 5
+MENU = 6
 TIME = 7
-DISCONNECT_CONFIRM = 8
-PAUSED = 9
-CONTINUE = 5
+DISCONNECT_CONFIRM = 11
+DISCONNECT = 1
+DISCONNECT_SERVER = 12
+PAUSED = 8
 
 
 def header(heading):
@@ -53,8 +55,20 @@ def send_disconnect_confirm(connection):
     send_message(connection, DISCONNECT_CONFIRM, '')
 
 
+def send_disconnect_server(connection):
+    send_message(connection, DISCONNECT_SERVER, '')
+
+
+def send_menu(connection):
+    send_message(connection, MENU, '')
+
+
 def send_void(connection):
     send_message(connection, VOID, '')
+
+
+def send_paused(connection):
+    send_message(connection, PAUSED, '')
 
 
 def send_message(connection, message_type, message_text):
@@ -63,11 +77,13 @@ def send_message(connection, message_type, message_text):
 
     def trim_message(message_text):
         MESSAGE_LIMIT = 99
-        return message_text[:MESSAGE_LIMIT]
+        return message_text[: MESSAGE_LIMIT]
 
     message_text = trim_message(message_text)
 
-    if message_type == DISCONNECT_REQUEST or message_type == VOID or message_type == DISCONNECT_CONFIRM:
+    if message_type == DISCONNECT_REQUEST or message_type == DISCONNECT_CONFIRM or message_type == DISCONNECT_SERVER:
+        encode_send(f'{message_type}0')
+    elif message_type == MENU or message_type == VOID or message_type == PAUSED:
         encode_send(f'{message_type}00')
     elif message_type == COMPOUND:
         encode_send(f'{message_type}{message_text}')
@@ -92,7 +108,9 @@ def receive_message(client):
 
     type = int(code[0])
 
-    if type == DISCONNECT_REQUEST or type == DISCONNECT_CONFIRM or type == VOID:
+    if type == DISCONNECT:
+        return Message(int(code[:2]), '')
+    elif type == MENU or type == VOID or type == PAUSED:
         return Message(type, '')
     elif type == NAME or type == MESSAGE or type == RESPONSE:
         message_len = int(code[1:])

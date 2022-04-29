@@ -2,6 +2,14 @@ import socket
 from shared import *
 import threading
 from getpass import getpass
+import atexit
+
+
+def exit_handler():
+    print('My application is ending!')
+
+
+atexit.register(exit_handler)
 
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 stop_request_thread = threading.Event()
@@ -23,11 +31,21 @@ def receive():
                 print(f'[{messages[2].text}] {messages[0].text} {messages[1].text}')
         elif messages.type == RESPONSE:
             print(messages.text)
-        elif messages.type == VOID:
+        elif messages.type == MENU or messages.type == VOID:
             pass
-        elif messages.type == DISCONNECT_CONFIRM:
+        elif messages.type == PAUSED:
+            print(
+                '[SERVER] The server is paused')
+            print('[NOTE] Future messages will be pending until unpaused')
+            send_message(client, PAUSED, '')
+        elif messages.type == DISCONNECT_REQUEST:
             close_client_thread.set()
-            print('[SUCCESS] You are now unable to send/receive. Press any key to exit')
+            send_disconnect_confirm(client)
+            print('[SERVER] You have been disconnected')
+            print('[ACTION] Press any key to exit')
+            return
+        elif messages.type == DISCONNECT_SERVER:
+            send_disconnect_request(client)
             return
 
     if stop_request_thread.is_set():
@@ -39,7 +57,6 @@ def receive():
 
 def send():
     if close_client_thread.is_set():
-        send_disconnect_confirm(client)
         return
 
     user_input = getpass('')
@@ -52,7 +69,7 @@ def send():
         send_message(client, MESSAGE, user_input)
 
     if stop_request_thread.is_set():
-        send_void(client)
+        send_menu(client)
         menu()
     else:
         send()
@@ -61,9 +78,9 @@ def send():
 def menu():
     header('menu')
     print("[OPTION] 1 - Change your name")
-    # print("[OPTION] 2 - Send a private message")
-    print("[OPTION] 2 - Disconnect from chat room")
-    print("[OPTION] 3 - Exit menu\n")
+    print("[OPTION] 2 - Send a private message")
+    print("[OPTION] 3 - Disconnect from chat room")
+    print("[OPTION] 4 - Exit menu\n")
 
     option = input('> ')
 
@@ -72,16 +89,13 @@ def menu():
         text = input('> ')
 
         send_message(client, NAME, text)
-        menu()
     # elif option == '2':
     #     pass
-    #     menu()
-    elif option == '2':
+    elif option == '3':
         print()
         send_disconnect_request(client)
-    elif option == '3' or option == '*':
-        print()
-        header('chat room')
+    elif option == '4' or option == '*':
+        pass
     else:
         print('[ERROR] Invalid Input. Choose from 1 to 4\n')
         menu()
@@ -91,7 +105,6 @@ def menu():
 
 def start_transfer():
     global end_receive
-
     stop_request_thread.clear()
 
     send_thread = threading.Thread(target=send)
@@ -101,6 +114,8 @@ def start_transfer():
         end_receive = False
         receive_thread = threading.Thread(target=receive)
         receive_thread.start()
+
+    header(' chat room ')
 
 
 def boot_client():
@@ -112,8 +127,7 @@ def boot_client():
     print(f'[SUCCESS] Joining from {id}')
     print('[CONTROL] Enter "*" anytime to access menu\n')
     print('[NOTE] You will not see your input')
-    print('[NOTE] Press ENTER to submit message\n')
-    header('chat room')
+    print('[NOTE] Press ENTER to submit message')
 
     start_transfer()
 
