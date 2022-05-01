@@ -21,7 +21,10 @@ def header(heading):
 
 
 def comment(str):
-    return
+    write_comment = True
+
+    if write_comment:
+        return
     print(str)
 
 
