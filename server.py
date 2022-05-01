@@ -15,11 +15,8 @@ name_id_map = {}
 menu_thread = threading.Event()
 menu_thread.clear()
 disconnected_server = False
-
-
-def get_long_time():
-    short_time = get_short_time()
-    return f'{"" if short_time[0] == "0" else "1"}{short_time[1]}:{short_time[2:4]} {short_time[4]}M'
+close_server_thread = threading.Event()
+close_server_thread.clear()
 
 
 def get_short_time():
@@ -39,6 +36,14 @@ def get_short_time():
     return f'{str(hour).zfill(2)}{str(min).zfill(2)}{section[0]}'
 
 
+def get_long_time():
+    short_time = get_short_time()
+    return f'{"" if short_time[0] == "0" else "1"}{short_time[1]}:{short_time[2:4]} {short_time[4]}M'
+
+
+long_time = get_long_time()
+
+
 def broadcast(name, text, is_message):
     time = get_short_time()
 
@@ -54,7 +59,7 @@ def remove_connection(c):
         if c in connections_id_map:
             id = connections_id_map[c]
             if id in id_name_map:
-                name = id_name_map
+                name = id_name_map[id]
                 if name in name_id_map:
                     del name_id_map[name]
                 del id_name_map[id]
@@ -76,7 +81,7 @@ def client_observe(client, address, already_joined):
     connections_id_map[client] = id
 
     if not already_joined:
-        print(f'[USER][{get_long_time()}] {name} joined')
+        print(f'[USER][{long_time}] {name} joined')
         for c in connections:
             try:
                 send_compound(c, name, 'joined', get_short_time(), False)
@@ -94,7 +99,6 @@ def client_observe(client, address, already_joined):
             return
 
         if message:
-            long_time = get_long_time()
             if isinstance(message, list):
                 # all connections confirm (client_index, message)
                 client_index = int(message[0].text)
@@ -103,8 +107,9 @@ def client_observe(client, address, already_joined):
                     send_message(connections[client_index],
                                  RESPONSE, f'[PRIVATE][{long_time}] {name}: {private_message}')
                     send_message(client, RESPONSE,
-                                 f'[SUCESS] Private message was sent')
-                    print(f'[RECEIVED][{long_time}] {name}: {private_message}')
+                                 f'[SUCCESS] Private message was sent')
+                    print(
+                        f'[PRIVATE][{long_time}] {private_message} [from {name} to {get_name(connections[client_index])}] ')
                 except:
                     print(
                         f'[ERROR][{long_time}] Private message from {name} failed')
@@ -148,11 +153,14 @@ def client_observe(client, address, already_joined):
                 print(f'[USER][{long_time}] {name} accessed menu')
                 send_simple_message(client, MENU)
             elif message.type == VOID:
-                send_simple_message(client, VOID)
+                pass
+            elif message.type == STOP_SERVER:
+                return
+            elif message.type == STOP_CLIENT:
+                send_simple_message(client, STOP_CLIENT)
             elif message.type == PAUSED:
                 return
             elif message.type == ALL_CONNECTIONS_REQUEST:
-                comment('reached 1')
                 names = []
                 for i in range(min(99, len(connections))):
                     name = get_name(connections[i])
@@ -171,10 +179,11 @@ def client_observe(client, address, already_joined):
 def create_socket():
     try:
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         return server
     except socket.error as err:
         print(
-            f'[ERROR][{get_long_time()}] Socket creation failed: {str(err)}')
+            f'[ERROR][{long_time}] Socket creation failed: {str(err)}')
         exit()
 
 
@@ -197,7 +206,6 @@ def create_client_connection():
         except:
             remove_connection(c)
 
-    long_time = get_long_time()
     if count_connection_creation == 1:
         print(f'[UPDATE][{long_time}] 1 Connection has been created')
     else:
@@ -218,7 +226,7 @@ def kick_client():
     valid_connections_count = len(connections)
 
     if valid_connections_count == 0:
-        print('[ERROR] No clients in server')
+        print(f'[ERROR][{long_time}] No clients in server')
         return True
 
     header(' client list ')
@@ -243,7 +251,7 @@ def kick_client():
     if client_index >= 0 and client_index < valid_connections_count:
         return connections[client_index]
     else:
-        print('[ERROR] Client index is not recognized')
+        print(f'[ERROR][{long_time}] Client index is not recognized')
         return None
 
 
@@ -259,12 +267,30 @@ def get_name(connection):
     return name
 
 
+def disconnect_all_users():
+    restart_clients()
+
+    for c in connections:
+        try:
+            send_simple_message(c, DISCONNECT_SERVER)
+        except:
+            remove_connection(c)
+
+    global disconnected_server
+    disconnected_server = True
+
+    print()
+    print(
+        f'[SUCCESS][{long_time}] All clients have been disconnected')
+
+
 def server_menu():
     header('menu')
     print("[OPTION] 1 - Kick a client")
     print("[OPTION] 2 - Disconnect all clients")
     print("[OPTION] 3 - Send a message to all clients")
-    print("[OPTION] 4 - Exit menu\n")
+    print("[OPTION] 4 - Shutdown server")
+    print("[OPTION] 5 - Exit menu\n")
     option = input('> ')
 
     if option == '1':
@@ -277,34 +303,26 @@ def server_menu():
             broadcast(get_name(client_kicked), 'has been kicked out', False)
             send_simple_message(client_kicked, DISCONNECT_SERVER)
     elif option == '2':
-        restart_clients()
-
-        for c in connections:
-            try:
-                send_simple_message(c, DISCONNECT_SERVER)
-            except:
-                remove_connection(c)
-
-        global disconnected_server
-        disconnected_server = True
-
-        print('\n[SUCCESS] All clients have been disconnected')
-
-        return
+        disconnect_all_users()
     elif option == '3':
         print('[INPUT] Enter message to send:')
         server_message = input('> ')
 
         if server_message == '':
-            print('[ERROR] Message must not be empty\n')
+            print(f'[ERROR][{long_time}] Message must not be empty\n')
             server_menu()
 
         restart_clients()
         broadcast('', server_message, False)
-    elif option == '4' or option == '*':
+        print(f'[SUCCESS][{long_time}] Message has been sent out\n')
+    elif option == '4':
+        disconnect_all_users()
+        close_server_thread.set()
+        server.close()
+    elif option == '5' or option == '*':
         restart_clients()
     else:
-        print('[ERROR] Invalid Input. Choose from 1 to 4\n')
+        print(f'[ERROR][{long_time}] Invalid Input. Choose from 1 to 5\n')
         server_menu()
 
 
@@ -335,7 +353,9 @@ def read_input():
         server_menu()
         print()
         header(' chat server ')
-    read_input()
+
+    if not close_server_thread.is_set():
+        read_input()
 
 
 def boot_server():
@@ -346,16 +366,20 @@ def boot_server():
         id = display_address(ADDRESS)
         clear_console()
         header('instructions')
-        print(f'[SUCCESS] Server is Running on {id}')
-        print('[CONTROL] Type and enter "*" anytime to access menu\n')
+        print(f'[SUCCESS][{long_time}] Server is Running on {id}')
+        print(
+            f'[CONTROL][{long_time}] Type and enter "*" anytime to access menu\n')
         header(' chat server ')
 
         menu_thread = threading.Thread(target=read_input)
         menu_thread.start()
         create_client_connection()
     except socket.error as err:
-        print(f'[ERROR][{get_long_time()}] Socket binding failed: {str(err)}')
-        print(f'[FIX][{get_long_time()}] Try changing port number in shared.py')
+        if close_server_thread.is_set():
+            print(f'[SUCCESS][{long_time}] Server has been shutdown')
+        else:
+            print(f'[ERROR][{long_time}] Socket binding failed: {str(err)}')
+            print(f'[FIX][{long_time}] Try changing port number in shared.py')
 
 
 boot_server()
