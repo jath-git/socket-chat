@@ -1,23 +1,39 @@
 import socket
 import os
+from math import floor
 
-PORT = 6062
+PORT = 6061
 DISCONNECT_REQUEST = 10
 MESSAGE = 0
 NAME = 2
 RESPONSE = 3
-COMPOUND = 4  # transfer NAME and MESSAGE/RESPONSE
+COMPOUND = 4  # transfer NAME, MESSAGE/RESPONSE, RESPONSE
 VOID = 5
 MENU = 6
-TIME = 7
+PRIVATE = 7
 DISCONNECT_CONFIRM = 11
 DISCONNECT = 1
 DISCONNECT_SERVER = 12
 PAUSED = 8
+ALL_CONNECTIONS = 9
+ALL_CONNECTIONS_REQUEST = 90
+ALL_CONNECTIONS_SEND = 91
+ALL_CONNECTIONS_CONFIRM = 92
+
+
+def pad_dash(str):
+    total_length = 45
+    dash_length = floor((total_length - len(str)) / 2)
+
+    dashes = ''
+    for _ in range(dash_length):
+        dashes += '-'
+
+    return f'{dashes}{str}{dashes}'
 
 
 def header(heading):
-    print(f'---------------{heading.upper()}---------------')
+    print(pad_dash(heading.upper()))
 
 
 def clear_console():
@@ -38,42 +54,44 @@ class Message:
 
 
 def send_compound(connection, name, message_or_response, time, is_message):
-    compound_code = str(MESSAGE if is_message else RESPONSE).zfill(2)
-
-    send_message(connection, COMPOUND, compound_code)
+    send_simple_message(connection, COMPOUND)
     send_message(connection, NAME, name)
     send_message(connection, MESSAGE if is_message else RESPONSE,
                  message_or_response)
-    send_message(connection, TIME, time)
+    send_message(connection, RESPONSE, time)
 
 
-def send_disconnect_request(connection):
-    send_message(connection, DISCONNECT_REQUEST, '')
+def encode_sender(connection, message_str):
+    connection.send(message_str.encode())
 
 
-def send_disconnect_confirm(connection):
-    send_message(connection, DISCONNECT_CONFIRM, '')
+def send_simple_message(connection, message_type):
+    def encode_send(message_str): encode_sender(connection, message_str)
+    # or message_type == ALL_CONNECTIONS_REQUEST:
+    if message_type == DISCONNECT_REQUEST or message_type == DISCONNECT_CONFIRM or message_type == DISCONNECT_SERVER:
+        encode_send(f'{message_type}0')
+    elif message_type == MENU or message_type == VOID or message_type == PAUSED or message_type == COMPOUND:
+        encode_send(f'{message_type}00')
+
+# def all_connections_send(connection, names):
+#     def encode_send(message_str): encode_sender(connection, message_str)
+#     client_count = len(names)
+#     if client_count > 99:
+#         client_count = 99
+
+#     encode_send(f'{ALL_CONNECTIONS}{str(client_count).zfill(2)}')
+#     for i in range(client_count):
+#         send_message(connection, NAME, names[i])
 
 
-def send_disconnect_server(connection):
-    send_message(connection, DISCONNECT_SERVER, '')
-
-
-def send_menu(connection):
-    send_message(connection, MENU, '')
-
-
-def send_void(connection):
-    send_message(connection, VOID, '')
-
-
-def send_paused(connection):
-    send_message(connection, PAUSED, '')
-
+# def all_connections_confirm(connection, index, message):
+#     def encode_send(message_str): encode_sender(connection, message_str)
+#     encode_send(f'{ALL_CONNECTIONS_CONFIRM}0')
+#     send_message(connection, RESPONSE, str(index).zfill(2))
+#     send_message(connection, RESPONSE, message)
 
 def send_message(connection, message_type, message_text):
-    def encode_send(message_str):
-        connection.send(message_str.encode())
+    def encode_send(message_str): encode_sender(connection, message_str)
 
     def trim_message(message_text):
         MESSAGE_LIMIT = 99
@@ -81,19 +99,8 @@ def send_message(connection, message_type, message_text):
 
     message_text = trim_message(message_text)
 
-    if message_type == DISCONNECT_REQUEST or message_type == DISCONNECT_CONFIRM or message_type == DISCONNECT_SERVER:
-        encode_send(f'{message_type}0')
-    elif message_type == MENU or message_type == VOID or message_type == PAUSED:
-        encode_send(f'{message_type}00')
-    elif message_type == COMPOUND:
-        encode_send(f'{message_type}{message_text}')
-    elif message_type == NAME or message_type == MESSAGE or message_type == RESPONSE:
+    if message_type == NAME or message_type == MESSAGE or message_type == RESPONSE:
         encode_send(f'{message_type}{str(len(message_text)).zfill(2)}')
-        encode_send(message_text)
-    elif message_type == COMPOUND:
-        encode_send(f'{COMPOUND}02')
-    elif message_type == TIME:
-        encode_send(f'{TIME}05')
         encode_send(message_text)
 
 
@@ -117,13 +124,28 @@ def receive_message(client):
         message_text = decode_receive(message_len)
         return Message(type, message_text)
     elif type == COMPOUND:
+        def parse_time(
+            message_text): return f'{"" if message_text[0] == "0" else "1"}{message_text[1]}:{message_text[2:4]} {message_text[4]}M'
         name = receive_message(client)
         message_or_response = receive_message(client)
         time = receive_message(client)
-        return [name, message_or_response, time]
-    elif type == TIME:
-        message_text = decode_receive(5)
-        return Message(TIME, f'{"" if message_text[0] == "0" else "1"}{message_text[1]}:{message_text[2:4]} {message_text[4]}M')
+        return [name, message_or_response, Message(RESPONSE, parse_time(time.text))]
+    # elif type == ALL_CONNECTIONS:
+    #     actual_type = int(code[:2])
+
+    #     if actual_type == ALL_CONNECTIONS_REQUEST:
+    #         return Message(actual_type, '')
+    #     elif actual_type == ALL_CONNECTIONS_SEND:
+    #         names = []
+    #         count = int(code[1:])
+    #         for i in range(count):
+    #             name = receive_message(client)
+    #             names.append(name)
+    #         return names
+    #     else:
+    #         client_index = receive_message(client)
+    #         message = receive_message(client)
+    #         return Message(client_index.type, client_index.text), Message(client_index.type, message.text)
 
 
 def get_address():
