@@ -1,8 +1,9 @@
 import socket
-from shared import *
+from helpers import *
+from constants import *
+from encryption import *
 import threading
 from getpass import getpass
-
 
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 stop_request_thread = threading.Event()
@@ -17,41 +18,43 @@ def receive():
 
     if messages:
         if isinstance(messages, list):
-            if len(messages) == 3 and messages[1].get_type() == MESSAGE or messages[1].get_type() == RESPONSE:
+            comment('names received')
+            if len(messages) == 3 and (messages[1].get_type() == MESSAGE or messages[1].get_type() == RESPONSE):
                 if messages[1].get_type() == MESSAGE:
                     print(
                         f'[{messages[2].text}] {messages[0].text}: {messages[1].text}')
                 else:
                     print(
                         f'[{messages[2].text}] {messages[0].text} {messages[1].text}')
-            # else:
-                # if len(messages) < 2:
-                #     print('[CAUTION] No clients in server')
-                # else:
-                #     header(' client list ')
-                #     print('[INPUT] Choose a client to send privately')
-                #     valid_connections_count = len(messages)
-                #     for i in range(valid_connections_count):
-                #         print(f'[OPTION] {i + 1} - {messages[i]}')
-                #     client_index = input('> ')
+            else:
+                comment(messages[0].text)
+                if len(messages) < 2:
+                    print('[CAUTION] No other in server')
+                else:
+                    header(' client list ')
+                    print('[INPUT] Choose a client to send privately')
+                    valid_connections_count = len(messages)
+                    for i in range(valid_connections_count):
+                        print(f'[OPTION] {i + 1} - {messages[i].text}')
+                    client_index = input('> ')
 
-                #     if client_index.isdigit():
-                #         client_index = int(client_index) - 1
-                #     else:
-                #         client_index = -1
+                    if client_index.isdigit():
+                        client_index = int(client_index) - 1
+                    else:
+                        client_index = -1
 
-                #     if client_index >= 0 and client_index < valid_connections_count:
-                #         print('[INPUT] Enter a message to send privately')
-                #         message_input = input('> ')
-                #         message_input = message_input[:99]
+                    if client_index >= 0 and client_index < valid_connections_count:
+                        print('[INPUT] Enter a message to send privately')
+                        message_input = input('> ')
+                        message_input = message_input[:99]
 
-                #         if message_input == '':
-                #             print('[ERROR] Message must not be empty')
-                #         else:
-                #             all_connections_confirm(
-                #                 client, client_index, message_input)
-                #     else:
-                #         print('[ERROR] Client index is not recognized')
+                        if message_input == '':
+                            print('[ERROR] Message must not be empty')
+                        else:
+                            all_connections_confirm(
+                                client, client_index, message_input)
+                    else:
+                        print('[ERROR] Client index is not recognized')
         elif messages.type == RESPONSE:
             print(messages.text)
         elif messages.type == MENU or messages.type == VOID:
@@ -112,8 +115,8 @@ def menu():
 
         send_message(client, NAME, text)
     elif option == '2':
-        # send_simple_message(client, ALL_CONNECTIONS)
-        pass
+        comment('reached')
+        send_simple_message(client, ALL_CONNECTIONS_REQUEST)
     elif option == '3':
         print()
         send_simple_message(client, DISCONNECT_REQUEST)

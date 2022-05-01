@@ -1,8 +1,11 @@
 import socket
 import threading
-from shared import *
+from helpers import *
+from constants import *
+from encryption import *
 from datetime import datetime
 from getpass import getpass
+from constants import *
 
 connections = []
 connections_id_map = {}
@@ -94,20 +97,19 @@ def client_observe(client, address, already_joined):
             long_time = get_long_time()
             if isinstance(message, list):
                 # all connections confirm (client_index, message)
-                pass
-                # client_index = int(message[0].text)
-                # private_message = message[1].text
-                # try:
-                #     send_message(connections[client_index],
-                #                  RESPONSE, f'[PRIVATE][{long_time}] {name}: {private_message}')
-                #     send_message(client, RESPONSE,
-                #                  f'[SUCESS] Private message was sent')
-                #     print(f'[RECEIVED][{long_time}] {name}: {private_message}')
-                # except:
-                #     print(
-                #         f'[ERROR][{long_time}] Private message from {name} failed')
-                #     send_message(client, RESPONSE,
-                #                  f'[ERROR][{long_time}] Private message failed')
+                client_index = int(message[0].text)
+                private_message = message[1].text
+                try:
+                    send_message(connections[client_index],
+                                 RESPONSE, f'[PRIVATE][{long_time}] {name}: {private_message}')
+                    send_message(client, RESPONSE,
+                                 f'[SUCESS] Private message was sent')
+                    print(f'[RECEIVED][{long_time}] {name}: {private_message}')
+                except:
+                    print(
+                        f'[ERROR][{long_time}] Private message from {name} failed')
+                    send_message(client, RESPONSE,
+                                 f'[ERROR][{long_time}] Private message failed')
 
             elif message.type == MESSAGE:
                 if message.text == '':
@@ -149,13 +151,14 @@ def client_observe(client, address, already_joined):
                 send_simple_message(client, VOID)
             elif message.type == PAUSED:
                 return
-            # elif message.type == ALL_CONNECTIONS_REQUEST:
-            #     names = []
-            #     for i in range(max(99, len(connections))):
-            #         name = get_name(connections[i])
-            #         names.append(name)
+            elif message.type == ALL_CONNECTIONS_REQUEST:
+                comment('reached 1')
+                names = []
+                for i in range(min(99, len(connections))):
+                    name = get_name(connections[i])
+                    names.append(name)
 
-            #     all_connections_send(client, names)
+                all_connections_send(client, names)
             elif message.type == DISCONNECT_REQUEST:
                 print(f'[USER][{long_time}] {name} disconnected')
                 broadcast(name, 'disconnected', False)
@@ -248,7 +251,7 @@ def get_name(connection):
     name = 'unknown'
 
     if connection in connections_id_map:
-        name = connections_id_map[name]
+        name = connections_id_map[connection]
 
         if name in id_name_map:
             name = id_name_map[name]
