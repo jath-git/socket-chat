@@ -2,228 +2,25 @@ import socket
 import threading
 from helpers import *
 from constants import *
-from encryption import *
-from datetime import datetime
+from encryption import send_compound, send_simple_message, all_connections_send, send_message, receive_message
 from getpass import getpass
-from constants import *
+from Sockets import Sockets
 
-connections = []
-connections_id_map = {}
-connections_address_map = {}
-id_name_map = {}
-name_id_map = {}
+sockets = Sockets()
 menu_thread = threading.Event()
 menu_thread.clear()
 disconnected_server = False
 close_server_thread = threading.Event()
 close_server_thread.clear()
-
-
-def get_short_time():
-    now = datetime.now()
-    hour = now.hour
-    min = now.minute
-    section = 'AM'
-
-    if hour == 0:
-        hour = 12
-    elif hour == 12:
-        section = 'PM'
-    elif hour > 12:
-        hour -= 12
-        section = 'PM'
-
-    return f'{str(hour).zfill(2)}{str(min).zfill(2)}{section[0]}'
-
-
-def get_long_time():
-    short_time = get_short_time()
-    return f'{"" if short_time[0] == "0" else "1"}{short_time[1]}:{short_time[2:4]} {short_time[4]}M'
-
-
 long_time = get_long_time()
-
-
-def broadcast(name, text, is_message):
-    time = get_short_time()
-
-    for c in connections:
-        try:
-            send_compound(c, name, text, time, is_message)
-        except:
-            remove_connection(c)
-
-
-def remove_connection(c):
-    if c in connections:
-        if c in connections_id_map:
-            id = connections_id_map[c]
-            if id in id_name_map:
-                name = id_name_map[id]
-                if name in name_id_map:
-                    del name_id_map[name]
-                del id_name_map[id]
-            del connections_id_map[c]
-
-        if c in connections_address_map:
-            del connections_address_map[c]
-
-        connections.remove(c)
-        c.close()
-
-
-def client_observe(client, address, already_joined):
-    id = display_address(address)
-    old_name = id_name_map[id] if id in id_name_map else id
-    name = old_name
-
-    connections_address_map[client] = address
-    connections_id_map[client] = id
-
-    if not already_joined:
-        print(f'[USER][{long_time}] {name} joined')
-        for c in connections:
-            try:
-                send_compound(c, name, 'joined', get_short_time(), False)
-            except:
-                remove_connection(c)
-
-    while True:
-        if menu_thread.is_set():
-            return
-
-        try:
-            message = receive_message(client)
-        except:
-            remove_connection(client)
-            return
-
-        if message:
-            if isinstance(message, list):
-                # all connections confirm (client_index, message)
-                client_index = int(message[0].text)
-                private_message = message[1].text
-                try:
-                    send_message(connections[client_index],
-                                 RESPONSE, f'[PRIVATE][{long_time}] {name}: {private_message}')
-                    send_message(client, RESPONSE,
-                                 f'[SUCCESS] Private message was sent')
-                    print(
-                        f'[PRIVATE][{long_time}] {private_message} [from {name} to {get_name(connections[client_index])}] ')
-                except:
-                    print(
-                        f'[ERROR][{long_time}] Private message from {name} failed')
-                    send_message(client, RESPONSE,
-                                 f'[ERROR][{long_time}] Private message failed')
-
-            elif message.type == MESSAGE:
-                if message.text == '':
-                    print(
-                        f'[ERROR][{long_time}] {name} sent empty message')
-                    send_message(client, RESPONSE,
-                                 '[ERROR] Message must not be empty')
-                else:
-                    print(f'[RECEIVED][{long_time}] {name}: {message.text}')
-                    broadcast(name, message.text, True)
-            elif message.type == NAME:
-                if message.text == '':
-                    print(
-                        f'[ERROR][{long_time}] {name} renamed empty string')
-                    send_message(client, RESPONSE,
-                                 f'[ERROR][{long_time}] New name must not be empty')
-                elif message.text in name_id_map:
-                    print(
-                        f'[ERROR][{long_time}] {name} renamed to existing name')
-                    send_message(client, RESPONSE,
-                                 f'[ERROR][{long_time}] Name already exists')
-                else:
-                    old_name = name
-                    name = message.text
-                    if id in id_name_map:
-                        del name_id_map[old_name]
-                        id_name_map[id] = name
-                        name_id_map[name] = id
-                    else:
-                        id_name_map[id] = name
-                        name_id_map[name] = id
-
-                    print(f'[USER][{long_time}] {old_name} renamed as {name}')
-                    broadcast(old_name, f'renamed as {name}', False)
-            elif message.type == MENU:
-                print(f'[USER][{long_time}] {name} accessed menu')
-                send_simple_message(client, MENU)
-            elif message.type == VOID:
-                pass
-            elif message.type == STOP_SERVER:
-                return
-            elif message.type == STOP_CLIENT:
-                send_simple_message(client, STOP_CLIENT)
-            elif message.type == PAUSED:
-                return
-            elif message.type == ALL_CONNECTIONS_REQUEST:
-                names = []
-                for i in range(min(99, len(connections))):
-                    name = get_name(connections[i])
-                    names.append(name)
-
-                all_connections_send(client, names)
-            elif message.type == DISCONNECT_REQUEST:
-                print(f'[USER][{long_time}] {name} disconnected')
-                broadcast(name, 'disconnected', False)
-                send_simple_message(client, DISCONNECT_REQUEST)
-            elif message.type == DISCONNECT_CONFIRM:
-                remove_connection(client)
-                client.close()
-
-
-def create_socket():
-    try:
-        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        return server
-    except socket.error as err:
-        print(
-            f'[ERROR][{long_time}] Socket creation failed: {str(err)}')
-        exit()
-
-
 server = create_socket()
 count_connection_creation = 0
 
+### MENU
 
-def create_client_connection():
-    global count_connection_creation, disconnected_server
-    connection, address = server.accept()
-    server.setblocking(True)
-
-    connections.append(connection)
-    connections_id_map[connection] = display_address(get_address())
-    count_connection_creation += 1
-
-    for c in connections:
-        try:
-            send_simple_message(c, VOID)
-        except:
-            remove_connection(c)
-
-    if count_connection_creation == 1:
-        print(f'[UPDATE][{long_time}] 1 Connection has been created')
-    else:
-        print(
-            f'[UPDATE][{long_time}] {count_connection_creation} Connections have been created')
-
-    receive_thread = threading.Thread(
-        target=client_observe, args=(connection, address, False))
-    receive_thread.start()
-
-    if not disconnected_server:
-        create_client_connection()
-
-
+# get server to choose client to disconnect
 def kick_client():
-    print()
-
-    valid_connections_count = len(connections)
+    valid_connections_count = len(sockets.connections)
 
     if valid_connections_count == 0:
         print(f'[ERROR][{long_time}] No clients in server')
@@ -232,11 +29,7 @@ def kick_client():
     header(' client list ')
     print('[INPUT] Choose a client to kick:')
     for i in range(valid_connections_count):
-        c = connections[i]
-        name = connections_id_map[c]
-
-        if name in id_name_map:
-            name = id_name_map[name]
+        name = sockets.get_name_from_index(i)
 
         print(f'[OPTION] {i + 1} - {name}')
 
@@ -249,41 +42,34 @@ def kick_client():
         client_index = -1
 
     if client_index >= 0 and client_index < valid_connections_count:
-        return connections[client_index]
+        name = sockets.get_name_from_index(client_index)
+        return sockets.get_connection(name)
     else:
         print(f'[ERROR][{long_time}] Client index is not recognized')
         return None
 
 
-def get_name(connection):
-    name = 'unknown'
-
-    if connection in connections_id_map:
-        name = connections_id_map[connection]
-
-        if name in id_name_map:
-            name = id_name_map[name]
-
-    return name
-
-
+# send message to tell client to disconnect
 def disconnect_all_users():
     restart_clients()
 
-    for c in connections:
+    for c in sockets.connections:
         try:
             send_simple_message(c, DISCONNECT_SERVER)
         except:
-            remove_connection(c)
+            sockets.remove_socket(c)
 
     global disconnected_server
     disconnected_server = True
+
+    for c in sockets.connections:
+        sockets.remove_socket(c)
 
     print()
     print(
         f'[SUCCESS][{long_time}] All clients have been disconnected')
 
-
+#  menu options only activated from settings when send/receive threads are paused
 def server_menu():
     header('menu')
     print("[OPTION] 1 - Kick a client")
@@ -294,14 +80,19 @@ def server_menu():
     option = input('> ')
 
     if option == '1':
+        print()
         client_kicked = kick_client()
 
         if client_kicked == None:
             server_menu()
         else:
             restart_clients()
-            broadcast(get_name(client_kicked), 'has been kicked out', False)
-            send_simple_message(client_kicked, DISCONNECT_SERVER)
+            
+            if client_kicked in sockets.connections:
+                send_simple_message(client_kicked, DISCONNECT_SERVER)
+                broadcast(sockets.get_name(client_kicked), 'has been kicked out', False)
+            else:
+                send_message(client, RESPONSE, '[ERROR] Client has already left')
     elif option == '2':
         disconnect_all_users()
     elif option == '3':
@@ -326,29 +117,136 @@ def server_menu():
         server_menu()
 
 
+# call receive thread again
 def restart_clients():
     menu_thread.clear()
-    for c in connections:
+    for c in sockets.connections:
         try:
             receive_thread = threading.Thread(
-                target=client_observe, args=(c, connections_address_map[c], True))
+                target=client_observe, args=(c, sockets.get_address(c), True))
             receive_thread.start()
 
             send_message(c, RESPONSE, '[CONTINUE] Server is unpaused')
         except:
-            remove_connection(c)
+            sockets.remove_socket(c)
 
 
+### SEND AND RECEIVE
+
+# send text to all clients
+def broadcast(name, text, is_message):
+    time = get_short_time()
+
+    for c in sockets.connections:
+        try:
+            send_compound(c, name, text, time, is_message)
+        except:
+            sockets.remove_socket(c)
+
+
+# thread for each client used when something is received to server socket
+def client_observe(connection, address, already_joined):
+    name = sockets.get_name(connection)
+
+    if not already_joined:
+        print(f'[USER][{long_time}] {name} joined')
+        for c in sockets.connections:
+            try:
+                send_compound(c, name, 'joined', get_short_time(), False)
+            except:
+                sockets.remove_socket(c)
+
+    while True:
+        if menu_thread.is_set():
+            return
+
+        try:
+            message = receive_message(connection)
+        except:
+            sockets.remove_socket(connection)
+            return
+
+        if message:
+            if isinstance(message, list):
+                # format: all connections confirm (client_index, message)
+                client_name = message[0].text
+                private_message = message[1].text
+                try:
+                    send_message(sockets.get_connection(client_name),
+                                 RESPONSE, f'[PRIVATE][{long_time}] {name}: {private_message}')
+                    send_message(connection, RESPONSE,
+                                 f'[SUCCESS] Private message was sent')
+                    print(
+                        f'[PRIVATE][{long_time}] {private_message} [from {name} to {client_name}] ')
+                except:
+                    print(
+                        f'[ERROR][{long_time}] Private message from {name} failed')
+                    send_message(connection, RESPONSE,
+                                 f'[ERROR][{long_time}] Private message failed')
+
+            elif message.type == MESSAGE:
+                if message.text == '':
+                    print(
+                        f'[ERROR][{long_time}] {name} sent empty message')
+                    send_message(connection, RESPONSE,
+                                 '[ERROR] Message must not be empty')
+                else:
+                    print(f'[RECEIVED][{long_time}] {name}: {message.text}')
+                    broadcast(name, message.text, True)
+            elif message.type == NAME:
+                if message.text == '':
+                    print(
+                        f'[ERROR][{long_time}] {name} renamed empty string')
+                    send_message(connection, RESPONSE,
+                                 f'[ERROR][{long_time}] New name must not be empty')
+                elif sockets.has_name(message.text):
+                    print(
+                        f'[ERROR][{long_time}] {name} renamed to existing name')
+                    send_message(connection, RESPONSE,
+                                 f'[ERROR][{long_time}] Name already exists')
+                else:
+                    old_name = name
+                    name = message.text
+                    sockets.change_name(connection, name)
+
+                    print(f'[USER][{long_time}] {old_name} renamed as {name}')
+                    broadcast(old_name, f'renamed as {name}', False)
+            elif message.type == MENU:
+                print(f'[USER][{long_time}] {name} accessed menu')
+                send_simple_message(connection, MENU)
+            elif message.type == VOID:
+                pass
+            elif message.type == STOP_SERVER:
+                return
+            elif message.type == STOP_CLIENT:
+                send_simple_message(connection, STOP_CLIENT)
+            elif message.type == PAUSED:
+                return
+            elif message.type == ALL_CONNECTIONS_REQUEST:
+                names = []
+                for i in range(min(99, len(sockets.connections))):
+                    names.append(sockets.get_name_from_index(i))
+
+                all_connections_send(connection, names)
+            elif message.type == DISCONNECT_REQUEST:
+                print(f'[USER][{long_time}] {name} is disconnecting')
+                broadcast(name, 'disconnected', False)
+                send_simple_message(connection, DISCONNECT_REQUEST)
+            elif message.type == DISCONNECT_CONFIRM:
+                sockets.remove_socket(connection)
+                connection.close()
+
+# receive thread continuously checks if menu should be activated
 def read_input():
     user_input = getpass('')
 
     if len(user_input) > 0 and (user_input == '*' or user_input[len(user_input) - 1] == '*'):
         menu_thread.set()
-        for c in connections:
+        for c in sockets.connections:
             try:
                 send_simple_message(c, PAUSED)
             except:
-                remove_connection(c)
+                sockets.remove_socket(c)
 
         server_menu()
         print()
@@ -358,15 +256,58 @@ def read_input():
         read_input()
 
 
+### INITIALIZE SOCKETS AND THREADS
+
+# initialize server socket
+def create_socket():
+    try:
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # for destroying server
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return server
+    except socket.error as err:
+        print(
+            f'[ERROR][{long_time}] Socket creation failed: {str(err)}')
+        exit()
+
+
+def create_client_connection():
+    global count_connection_creation, disconnected_server
+    connection, address = server.accept()
+    server.setblocking(True)
+
+    count_connection_creation += 1
+
+    sockets.add_socket(connection, address)
+
+    for c in sockets.connections:
+        try:
+            send_simple_message(c, VOID)
+        except:
+            sockets.remove_socket(c)
+
+    if count_connection_creation == 1:
+        print(f'[UPDATE][{long_time}] 1 Connection has been created')
+    else:
+        print(
+            f'[UPDATE][{long_time}] {count_connection_creation} Connections have been created')
+
+    receive_thread = threading.Thread(
+        target=client_observe, args=(connection, address, False))
+    receive_thread.start()
+
+    if not disconnected_server:
+        create_client_connection()
+
 def boot_server():
     try:
-        ADDRESS = get_address()
-        server.bind(ADDRESS)
+        server = create_socket()
+        address = get_address()
+        server.bind(address)
         server.listen()
-        id = display_address(ADDRESS)
         clear_console()
         header('instructions')
-        print(f'[SUCCESS][{long_time}] Server is Running on {id}')
+        print(f'[SUCCESS][{long_time}] Server is Running on {address[0]} ({address[1]}')
         print(
             f'[CONTROL][{long_time}] Type and enter "*" anytime to access menu\n')
         header(' chat server ')
