@@ -1,20 +1,6 @@
 
 from constants import *
-
-from helpers import comment
-
-
-class Message:
-    def __init__(self, _type, _text):
-        self.type = _type
-        self.text = _text
-
-    def get_type(self):
-        return self.type
-
-    def get_text(self):
-        return self.text
-
+from Message import Message
 
 def send_compound(connection, name, message_or_response, time, is_message):
     send_simple_message(connection, COMPOUND)
@@ -53,11 +39,11 @@ def all_connections_send(connection, names):
         send_message(connection, NAME, names[i])
 
 
-def all_connections_confirm(connection, index, message):
+def all_connections_confirm(connection, name, message):
     def encode_send(message_str): encode_sender(connection, message_str)
 
     encode_send(f'{ALL_CONNECTIONS_CONFIRM}0')
-    send_message(connection, RESPONSE, str(index).zfill(2))
+    send_message(connection, RESPONSE, name)
     send_message(connection, RESPONSE, message)
 
 
@@ -112,7 +98,7 @@ def receive_message(client):
                 name = receive_message(client)
                 names.append(name)
             return names
-        else:
-            client_index = receive_message(client)
+        elif actual_type == ALL_CONNECTIONS_CONFIRM:
+            name = receive_message(client)
             message = receive_message(client)
-            return [Message(client_index.type, client_index.text), Message(client_index.type, message.text)]
+            return [Message(name.type, name.text), Message(message.type, message.text)]
