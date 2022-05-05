@@ -1,8 +1,8 @@
-from re import S
 import socket
-from helpers import *
+from helpers import header, clear_console, get_address
 from constants import *
-from encryption import *
+from encryption import send_simple_message, send_message, receive_message
+
 import threading
 from getpass import getpass
 
@@ -13,6 +13,7 @@ close_client_thread = threading.Event()
 close_client_thread.clear()
 end_receive = True
 
+### SEND AND RECEIVE THREADS
 
 def receive():
     messages = receive_message(client)
@@ -53,7 +54,7 @@ def receive():
                             print('[ERROR] Message must not be empty')
                         else:
                             all_connections_confirm(
-                                client, client_index, message_input)
+                                client, messages[client_inde].text, message_input)
                     else:
                         print('[ERROR] Client index is not recognized')
 
@@ -99,11 +100,11 @@ def send():
         stop_receive()
         send_simple_message(client, MENU)
         menu()
-        return
     else:
         send_message(client, MESSAGE, user_input)
         send()
 
+### MENU
 
 def menu():
     header('menu')
@@ -117,7 +118,6 @@ def menu():
     if option == '1':
         print('[INPUT] Enter new name:')
         text = input('> ')
-
         send_message(client, NAME, text)
     elif option == '2':
         send_simple_message(client, ALL_CONNECTIONS_REQUEST)
@@ -134,6 +134,7 @@ def menu():
 
     start_transfer()
 
+### INITALIZE THREADS AND CONNECT CLIENT
 
 def stop_receive():
     global end_receive
@@ -171,7 +172,6 @@ def start_receive():
 def boot_client():
     ADDRESS = get_address()
     client.connect(ADDRESS)
-    id = display_address(ADDRESS)
     clear_console()
     header('instructions')
     print(f'[SUCCESS] Joining from {id}')
