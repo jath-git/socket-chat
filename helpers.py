@@ -25,19 +25,21 @@ def get_long_time():
     short_time = get_short_time()
     return f'{"" if short_time[0] == "0" else "1"}{short_time[1]}:{short_time[2:4]} {short_time[4]}M'
 
+
+def pad_dash(str):
+    str = str.upper()
+    total_length = 50
+    dash_length = floor((total_length - len(str)) / 2)
+
+    dashes = ''
+    for _ in range(dash_length):
+        dashes += '-'
+
+    return f'{dashes}{str}{dashes}'
+
 # pad string with hyphens, symmetrically
 def header(heading):
-    def pad_dash(str):
-        total_length = 50
-        dash_length = floor((total_length - len(str)) / 2)
-
-        dashes = ''
-        for _ in range(dash_length):
-            dashes += '-'
-
-        return f'{dashes}{str}{dashes}'
-
-    print(pad_dash(heading.upper()))
+    print(pad_dash(heading))
 
 # clear user shell
 def clear_console():
