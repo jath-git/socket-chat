@@ -1,5 +1,6 @@
-
 from constants import *
+import sys
+sys.path.insert(0, './classes')
 from Message import Message
 
 def send_compound(connection, name, message_or_response, time, is_message):
