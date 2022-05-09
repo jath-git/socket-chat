@@ -19,6 +19,14 @@ def get_short_time():
 
     return f'{str(hour).zfill(2)}{str(min).zfill(2)}{section[0]}'
 
+def console_colour_change(colour):
+    if colour == 'black':
+        print("\033[0;37;1m")
+    elif colour == 'green':
+        print("\033[1;32;1m")
+    elif colour == 'blue':
+        print("\033[1;34;1m")
+
 
 def get_long_time():
     short_time = get_short_time()
