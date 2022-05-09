@@ -96,6 +96,7 @@ def database_menu():
 
 #  menu options only activated from settings when send/receive threads are paused
 def server_menu():
+    console_colour_change('blue')
     queue.push('HEADING', pad_dash('menu'))
     queue.push('OPTION', '1 - Kick a client')
     queue.push('OPTION', '2 - Disconnect all clients')
@@ -146,6 +147,8 @@ def server_menu():
         queue.push('ERROR', 'Invalid Input. Choose from 1 to 6')
         queue.push_empty()
         server_menu()
+        
+    console_colour_change('black')
 
 
 # call receive thread again
@@ -337,8 +340,9 @@ def boot_server():
         server.bind(address)
         server.listen()
         clear_console()
+        console_colour_change('black')
         queue.push('HEADING', pad_dash(' instructions '))
-        queue.push(f'SUCCESS', f'Server is Running on {address[0]} ({address[1]}')
+        queue.push(f'SUCCESS', f'Server is Running on {address[0]} ({address[1]})')
         queue.push('CONTROL', 'Type and enter "*" anytime to access menu\n')
         queue.push('HEADING', pad_dash(' chat server '))
 
