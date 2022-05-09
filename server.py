@@ -80,19 +80,27 @@ def database_menu():
 
     option = input('> ')
 
+    database_message = ''
     if option == '1':
         queue.save()
-        queue.push('DATABASE', 'Server has been saved successfully')
+        database_message = 'Server has been saved'
     elif option == '2':
-        queue.restore()
+        if queue.restore():
+            database_message = 'Server has been restored'
+        else:
+            database_message = 'No server data to restore'
     elif option == '3':
         queue.clear()
-        queue.push('DATABASE', 'Server has been cleared successfully')
+        database_message = 'Server has been cleared'
     elif option == '4':
-        pass
+        return
     else:
         queue.push('ERROR', 'Invalid Input. Choose from 1 to 4')
         database_menu()
+
+    console_colour_change('black')
+    queue.push('DATABASE', database_message)
+    
 
 #  menu options only activated from settings when send/receive threads are paused
 def server_menu():
