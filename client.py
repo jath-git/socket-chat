@@ -1,5 +1,5 @@
 import socket
-from helpers import header, clear_console, get_address
+from helpers import header, clear_console
 from constants import *
 from encryption import send_simple_message, send_message, receive_message
 
@@ -170,6 +170,10 @@ def start_receive():
 
 
 def boot_client():
+    def get_address():
+        SERVER = socket.gethostbyname('localhost')
+        PORT = 6002
+        return (SERVER, PORT)
     ADDRESS = get_address()
     client.connect(ADDRESS)
     clear_console()
