@@ -1,4 +1,3 @@
-import socket
 import os
 from math import floor
 from datetime import datetime
@@ -45,8 +44,3 @@ def header(heading):
 def clear_console():
     command = 'cls' if os.name in ('nt', 'dos') else 'clear'
     os.system(command)
-
-def get_address():
-    SERVER = socket.gethostbyname('localhost')
-    PORT = 6002
-    return (SERVER, PORT)
