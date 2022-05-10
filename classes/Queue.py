@@ -1,7 +1,10 @@
 import threading
 from helpers import get_long_time, clear_console, header, console_colour_change
-from DatabaseService import DatabaseService
+from SQLService import SQLService
 import json
+import sys
+
+sys.path.insert(0, '../databaseService')
 
 class ServerMessage:
     def __init__(self, _summary, _time, _message):
@@ -13,12 +16,12 @@ class Queue:
     # private field
     __queue_list = None
     __time = None
-    database_service = None
+    sql_service = None
 
     def __init__(self):
         self.__queue_list = []
         self.update_time()
-    database_service = DatabaseService()
+    sql_service = SQLService()
 
     def update_time(self):
         self.__time = get_long_time()
@@ -27,10 +30,11 @@ class Queue:
     def push(self, summary, message):
         self.update_time()
         summary = summary.upper()
-        self.__queue_list.append(ServerMessage(summary, self.__time, message))
+
+        if summary != 'OPTION':
+            self.__queue_list.append(ServerMessage(summary, self.__time, message))
 
         print_str = self.get_print_str(summary, self.__time, message)
-
         print(print_str)
 
     def get_print_str(self, summary, time, message):
@@ -44,7 +48,7 @@ class Queue:
     def save(self):
         while len(self.__queue_list) > 0:
             top = self.pop(self.__queue_list)
-            self.database_service.add_table(top.summary, top.time, top.message)
+            self.sql_service.add_table(top.summary, top.time, top.message)
 
     def print_row(self, row):
         row_obj = {"id": row[0], "summary": row[1], "time": row[2], "message": row[3]}
@@ -54,21 +58,26 @@ class Queue:
 
     def restore(self):
         clear_console()
-        rows = self.database_service.get_table()
+        rows = self.sql_service.get_table()
         if len(rows) > 0:
             header('Saved Server')
             print()
             console_colour_change('green')
-            for i in rows:
-                self.print_row(i)
+            for i in range(len(rows)):
+                if rows[i][1] == 'HEADING' and ((i == len(rows) - 1) or (i + 1 < len(rows) and rows[i + 1][1] == 'HEADING')):
+                    pass
+                else:
+                    self.print_row(rows[i])
             console_colour_change('black')
-        else:
-            self.push('CAUTION', 'No server data is saved')
+            return True
+            
+        return False
 
 
     def clear(self):
-        self.database_service.delete_table()
         clear_console()
+        self.sql_service.delete_table()
+        # print('here')
 
     def push_empty(self):
         print()
