@@ -7,9 +7,12 @@ from encryption import send_compound, send_simple_message, all_connections_send,
 from getpass import getpass
 
 sys.path.insert(0, './classes')
+sys.path.insert(0, './databaseService')
 from Queue import Queue
 from Sockets import Sockets
-
+from FirebaseService import FirebaseService
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 sockets = Sockets()
 menu_thread = threading.Event()
@@ -19,7 +22,14 @@ close_server_thread = threading.Event()
 close_server_thread.clear()
 long_time = get_long_time()
 count_connection_creation = 0
+notifications_counter = 0
 queue = Queue()
+
+# initialize db
+cred = credentials.Certificate('./FirebaseKey.json')
+app = firebase_admin.initialize_app(cred)
+db = firebase_admin.firestore.client()
+firebase_service = FirebaseService(db)
 
 ### MENU
 
@@ -28,15 +38,15 @@ def kick_client():
     valid_connections_count = len(sockets.connections)
 
     if valid_connections_count == 0:
-        queue.push('ERROR', 'No clients in server')
+        push_and_print('ERROR', 'No clients in server')
         return True
 
-    queue.push('HEADING', pad_dash(' client list '))
-    queue.push('INPUT', 'Choose a client to kick:')
+    push_and_print('HEADING', pad_dash(' client list '))
+    push_and_print('INPUT', 'Choose a client to kick:')
     for i in range(valid_connections_count):
         name = sockets.get_name_from_index(i)
 
-        queue.push('OPTION', f'{i + 1} - {name}')
+        push_and_print('OPTION', f'{i + 1} - {name}')
 
     queue.push_empty()
     client_index = input('> ')
@@ -50,7 +60,7 @@ def kick_client():
         name = sockets.get_name_from_index(client_index)
         return sockets.get_connection(name)
     else:
-        queue.push('ERROR', 'Client index is not recognized')
+        push_and_print('ERROR', 'Client index is not recognized')
         return None
 
 
@@ -68,14 +78,14 @@ def disconnect_all_users():
     disconnected_server = True
 
     queue.push_empty()
-    queue.push('SUCCESS', 'All clients have been disconnected')
+    push_and_print('SUCCESS', 'All clients have been disconnected')
 
 def database_menu():
-    queue.push('HEADING', pad_dash(' database menu '))
-    queue.push('OPTION', '1 - Save server messages')
-    queue.push('OPTION', '2 - Restore server messages')
-    queue.push('OPTION', '3 - Clear server messages')
-    queue.push('OPTION', '4 - Exit database menu')
+    push_and_print('HEADING', pad_dash(' database menu '))
+    push_and_print('OPTION', '1 - Save server messages')
+    push_and_print('OPTION', '2 - Restore server messages')
+    push_and_print('OPTION', '3 - Clear server messages')
+    push_and_print('OPTION', '4 - Exit database menu')
     queue.push_empty()
 
     option = input('> ')
@@ -95,23 +105,23 @@ def database_menu():
     elif option == '4':
         return
     else:
-        queue.push('ERROR', 'Invalid Input. Choose from 1 to 4')
+        push_and_print('ERROR', 'Invalid Input. Choose from 1 to 4')
         database_menu()
 
     console_colour_change('black')
-    queue.push('DATABASE', database_message)
+    push_and_print('DATABASE', database_message)
     
 
 #  menu options only activated from settings when send/receive threads are paused
 def server_menu():
     console_colour_change('blue')
-    queue.push('HEADING', pad_dash('menu'))
-    queue.push('OPTION', '1 - Kick a client')
-    queue.push('OPTION', '2 - Disconnect all clients')
-    queue.push('OPTION', '3 - Send a message to all clients')
-    queue.push('OPTION', '4 - Shutdown server')
-    queue.push('OPTION', '5 - Access database')
-    queue.push('OPTION', '6 - Exit menu')
+    push_and_print('HEADING', pad_dash('menu'))
+    push_and_print('OPTION', '1 - Kick a client')
+    push_and_print('OPTION', '2 - Disconnect all clients')
+    push_and_print('OPTION', '3 - Send a message to all clients')
+    push_and_print('OPTION', '4 - Shutdown server')
+    push_and_print('OPTION', '5 - Access database')
+    push_and_print('OPTION', '6 - Exit menu')
     queue.push_empty()
 
     option = input('> ')
@@ -131,32 +141,35 @@ def server_menu():
     elif option == '2':
         disconnect_all_users()
     elif option == '3':
-        queue.push('INPUT', 'Enter message to send:')
+        push_and_print('INPUT', 'Enter message to send:')
         server_message = input('> ')
 
         if server_message == '':
-            queue.push('ERROR', 'Message must not be empty')
+            push_and_print('ERROR', 'Message must not be empty')
             queue.push_empty()
             server_menu()
 
         restart_clients()
         broadcast('', server_message, False)
-        queue.push('SUCCESS', 'Message has been sent out')
+        push_and_print('SUCCESS', 'Message has been sent out')
         queue.push_empty()
     elif option == '4':
         disconnect_all_users()
         close_server_thread.set()
         server.close()
+        firebase_service.update_document('active', False)
+        firebase_service.update_document('approxnotifications', notifications_counter)
     elif option == '5':
         database_menu()
     elif option == '6' or option == '*':
         restart_clients()
     else:
-        queue.push('ERROR', 'Invalid Input. Choose from 1 to 6')
+        push_and_print('ERROR', 'Invalid Input. Choose from 1 to 6')
         queue.push_empty()
         server_menu()
         
     console_colour_change('black')
+    firebase_service.update_document('approxnotifications', notifications_counter)
 
 
 # call receive thread again
@@ -191,7 +204,7 @@ def client_observe(connection, address, already_joined):
     name = sockets.get_name(connection)
         
     if not already_joined:
-        queue.push('USER', f'{name} joined')
+        push_and_print('USER', f'{name} joined')
         for c in sockets.connections:
             try:
                 send_compound(c, name, 'joined', get_short_time(), False)
@@ -219,27 +232,27 @@ def client_observe(connection, address, already_joined):
                                  RESPONSE, f'[PRIVATE][{long_time}] {name}: {private_message}')
                     send_message(connection, RESPONSE,
                                  f'[SUCCESS] Private message was sent')
-                    queue.push('PRIVATE', f'{private_message} [from {name} to {client_name}]')
+                    push_and_print('PRIVATE', f'{private_message} [from {name} to {client_name}]')
                 except:
-                    queue.push('ERROR', f'Private message from {name} failed')
+                    push_and_print('ERROR', f'Private message from {name} failed')
                     send_message(connection, RESPONSE,
                                  f'[ERROR][{long_time}] Private message failed')
 
             elif message.type == MESSAGE:
                 if message.text == '':
-                    queue.push('ERROR', f'{name} sent empty message')
+                    push_and_print('ERROR', f'{name} sent empty message')
                     send_message(connection, RESPONSE,
                                  '[ERROR] Message must not be empty')
                 else:
-                    queue.push('RECEIVED', f'{name}: {message.text}')
+                    push_and_print('RECEIVED', f'{name}: {message.text}')
                     broadcast(name, message.text, True)
             elif message.type == NAME:
                 if message.text == '':
-                    queue.push('ERROR', f'{name} renamed empty string')
+                    push_and_print('ERROR', f'{name} renamed empty string')
                     send_message(connection, RESPONSE,
                                  f'[ERROR][{long_time}] New name must not be empty')
                 elif sockets.has_name(message.text):
-                    queue.push('ERROR', f'{name} renamed to existing name')
+                    push_and_print('ERROR', f'{name} renamed to existing name')
                     send_message(connection, RESPONSE,
                                  f'[ERROR][{long_time}] Name already exists')
                 else:
@@ -247,10 +260,10 @@ def client_observe(connection, address, already_joined):
                     name = message.text
                     sockets.change_name(connection, name)
 
-                    queue.push('USER', f'{old_name} renamed as {name}')
+                    push_and_print('USER', f'{old_name} renamed as {name}')
                     broadcast(old_name, f'renamed as {name}', False)
             elif message.type == MENU:
-                queue.push('USER', f'{name} accessed menu')
+                push_and_print('USER', f'{name} accessed menu')
                 send_simple_message(connection, MENU)
             elif message.type == VOID:
                 pass
@@ -267,7 +280,7 @@ def client_observe(connection, address, already_joined):
 
                 all_connections_send(connection, names)
             elif message.type == DISCONNECT_REQUEST:
-                queue.push('USER', f'{name} has disconnected')
+                push_and_print('USER', f'{name} has disconnected')
                 broadcast(name, 'disconnected', False)
                 send_simple_message(connection, DISCONNECT_REQUEST)
             elif message.type == DISCONNECT_CONFIRM:
@@ -287,7 +300,7 @@ def read_input():
 
         server_menu()
         queue.push_empty()
-        queue.push('HEADING', pad_dash(' chat server '))
+        push_and_print('HEADING', pad_dash(' chat server '))
 
 
     if not close_server_thread.is_set():
@@ -304,7 +317,7 @@ def create_socket():
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         return server
     except socket.error as err:
-        queue.push('ERROR', f'Socket creation failed: {str(err)}')
+        push_and_print('ERROR', f'Socket creation failed: {str(err)}')
         exit()
 
 server = create_socket()
@@ -316,6 +329,7 @@ def create_client_connection():
     server.setblocking(True)
 
     count_connection_creation += 1
+    firebase_service.update_document_int('connections', 1)
 
     sockets.add_socket(connection, address)
 
@@ -326,9 +340,9 @@ def create_client_connection():
             sockets.remove_socket(c)
 
     if count_connection_creation == 1:
-        queue.push('UPDATE', 'Connection has been created')
+        push_and_print('UPDATE', 'Connection has been created')
     else:
-        queue.push('UPDATE', f'{count_connection_creation} Connections have been created')
+        push_and_print('UPDATE', f'{count_connection_creation} Connections have been created')
 
     receive_thread = threading.Thread(
         target=client_observe, args=(connection, address, False))
@@ -336,6 +350,12 @@ def create_client_connection():
 
     if not disconnected_server:
         create_client_connection()
+
+def push_and_print(summary, message):
+    queue.push(summary, message)
+    if summary != 'OPTION' and summary != 'HEADING':
+        global notifications_counter
+        notifications_counter += 1
 
 def boot_server():
     def get_address():
@@ -348,21 +368,30 @@ def boot_server():
         server.bind(address)
         server.listen()
         clear_console()
+
+        firebase_service.create_document(f'{address[0]} ({address[1]})')
+        firebase_service.set_document({
+            'active': True,
+            'connections': 0,
+            'approxnotifications': 0,
+            'datecreated': get_date()
+        })
+        
         console_colour_change('black')
-        queue.push('HEADING', pad_dash(' instructions '))
-        queue.push(f'SUCCESS', f'Server is Running on {address[0]} ({address[1]})')
-        queue.push('CONTROL', 'Type and enter "*" anytime to access menu\n')
-        queue.push('HEADING', pad_dash(' chat server '))
+        push_and_print('HEADING', pad_dash(' instructions '))
+        push_and_print(f'SUCCESS', f'Server is Running on {address[0]} ({address[1]})')
+        push_and_print('CONTROL', 'Type and enter "*" anytime to access menu\n')
+        push_and_print('HEADING', pad_dash(' chat server '))
 
         read_thread = threading.Thread(target=read_input)
         read_thread.start()
         create_client_connection()
     except socket.error as err:
         if close_server_thread.is_set():
-            queue.push('SUCCESS', 'Server has been shutdown')
+            push_and_print('SUCCESS', 'Server has been shutdown')
         else:
-            queue.push('ERROR', f'Socket binding failed: {str(err)}')
-            queue.push('FIX', 'Try changing port number in shared.py')
+            push_and_print('ERROR', f'Socket binding failed: {str(err)}')
+            push_and_print('FIX', 'Try changing port number in shared.py')
 
 
 boot_server()
