@@ -19,6 +19,25 @@ def get_short_time():
 
     return f'{str(hour).zfill(2)}{str(min).zfill(2)}{section[0]}'
 
+def get_date():
+    month_dict = {
+        1: 'January',
+        2: 'February',
+        3: 'March',
+        4: 'April',
+        5: 'May',
+        6: 'June',
+        7: 'July',
+        8: 'August',
+        9: 'September',
+        10: 'October',
+        11: 'November',
+        12: 'December'
+    }
+
+    now = datetime.now()
+    return f'{month_dict[now.month]} {now.day}, {now.year}'
+
 def console_colour_change(colour):
     if colour == 'black':
         print("\033[0;37;1m")
