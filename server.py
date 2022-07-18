@@ -1,3 +1,4 @@
+from ast import Return
 import socket
 import threading
 import sys
@@ -68,11 +69,12 @@ def kick_client():
 def disconnect_all_users():
     restart_clients()
 
-    for c in sockets.connections:
+    while len(sockets.connections) > 0:
         try:
-            send_simple_message(c, DISCONNECT_SERVER)
+            send_simple_message(sockets.connections[0], DISCONNECT_SERVER)
+            sockets.connections.pop(0)
         except:
-            sockets.remove_socket(c)
+            sockets.connections.pop(0)
 
     global disconnected_server
     disconnected_server = True
@@ -120,8 +122,8 @@ def server_menu():
     push_and_print('OPTION', '2 - Disconnect all clients')
     push_and_print('OPTION', '3 - Send a message to all clients')
     push_and_print('OPTION', '4 - Shutdown server')
-    push_and_print('OPTION', '5 - Access database')
-    push_and_print('OPTION', '6 - Exit menu')
+    # push_and_print('OPTION', '5 - Access database')
+    push_and_print('OPTION', '5 - Exit menu')
     queue.push_empty()
 
     option = input('> ')
@@ -159,9 +161,10 @@ def server_menu():
         server.close()
         firebase_service.update_document('active', False)
         firebase_service.update_document('approxnotifications', notifications_counter)
-    elif option == '5':
-        database_menu()
-    elif option == '6' or option == '*':
+        return
+    # elif option == '5':
+    #     database_menu()
+    elif option == '5' or option == '*':
         restart_clients()
     else:
         push_and_print('ERROR', 'Invalid Input. Choose from 1 to 6')
