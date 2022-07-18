@@ -40,7 +40,7 @@ def get_date():
 
 def console_colour_change(colour):
     if colour == 'black':
-        print("\033[0;37;1m")
+        print("\033[0;30;1m")
     elif colour == 'green':
         print("\033[1;32;1m")
     elif colour == 'blue':
