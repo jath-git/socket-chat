@@ -39,7 +39,7 @@
     <img src="readme/chat-service.png" alt="project-thumbnail" width="400" height="250">
   </a>
 
-  <h3>Chat Service</h3>
+  <h3>Messenger</h3>
   <!-- languages used in project -->
   <div>
     <img alt="skill-thumbnail" width="27px" height="30px" src="./readme/python.png" />
